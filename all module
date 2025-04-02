@@ -5,133 +5,229 @@ module CPU(
     output [3:0] pc_out,
     output [7:0] instruction_out,
     output [7:0] alu_result_out,
-    output [7:0] reg0_out,
-    output [7:0] reg1_out,
-    output [7:0] reg2_out,
-    output [7:0] reg3_out
+    output [7:0] R0_out,
+    output [7:0] R1_out,
+    output [7:0] R2_out,
+    output [7:0] R3_out
 );
 	 wire [3:0] pc;
     wire [7:0] instruction;
-    wire [1:0] opcode;        
+    wire [1:0] opcode;       
     wire [1:0] rs, rt, rd;    
-    wire [5:0] jump_addr;    
-    wire [3:0] imm;         
-    wire is_j_format, is_i_format, is_r_format, is_b_format;
+    wire [5:0] jump_addr;     
+    wire [3:0] immediate;           
+    wire j_format, i_format, r_format, b_format;
     wire [7:0] read_data1, read_data2, read_data3;
 	 wire [7:0] alu_result;
     wire zero_flag;
-    wire reg_write, alu_src, jump, branch, halt;
+    wire reg_write, alu_select, jump, branch;
     wire [7:0] alu_input_b;
-    wire [7:0] imm_extended;
+    wire [7:0] immediate_ext;
     wire [1:0] write_reg_mux;
-	 assign write_reg_mux = is_r_format ? rd :    // R-format: เขียนไปที่ rd
-                           is_i_format ? rs :     // I-format: เขียนไปที่ rs
-                           2'b00;                 // กรณีอื่นๆ (J/B-format): ไม่เขียน
-    // Sign or zero extend the immediate value
-    assign imm_extended = {4'b0000, imm};
   
+     assign immediate_ext = {4'b0000, immediate};
     assign pc_out = pc;
     assign instruction_out = instruction;
     assign alu_result_out = alu_result;
 	 
-	 ProgramCounter pc_module(
+	  Program_Counter pc_module(
         .clk(clk),
         .reset(reset),
         .jump_addr(jump_addr),
         .Jump(jump),
         .Branch(branch),
-        .Zero(zero_flag),
-        .Halt(halt),
+        .Flag(zero_flag),
         .PC(pc)
     );
 	 
-	 InstructionMemory imem(
+	  Instruction_memory imem(
         .Address(pc),
         .Instruction(instruction)
     );
 	 
-	 Decode decoder(
+	  Decode decoder(
         .Instruction(instruction),
         .opcode(opcode),
         .rs(rs),
         .rt(rt),
         .rd(rd),
         .jump_addr(jump_addr),
-        .imm(imm),
-        .is_j_format(is_j_format),
-        .is_i_format(is_i_format),
-        .is_r_format(is_r_format),
-        .is_b_format(is_b_format)
+        .immediate(immediate),
+        .j_format(j_format),
+        .i_format(i_format),
+        .r_format(r_format),
+        .b_format(b_format)
     );
 	 
-	 ControlUnit control(
+	  Control_Unit control(
         .opcode(opcode),
-        .is_i_format(is_i_format),
-        .is_r_format(is_r_format),
-        .is_j_format(is_j_format),
-        .is_b_format(is_b_format),
+        .i_format(i_format),
+        .r_format(r_format),
+        .j_format(j_format),
+        .b_format(b_format),
         .RegWrite(reg_write),
-        .ALUSrc(alu_src),
+        .ALUSrc(alu_select),
         .Jump(jump),
-        .Branch(branch),
-        .Halt(halt)
+        .Branch(branch)
     );
 	 
-	 RegisterFile regfile(
+	  Reg_File regfile(
         .clk(clk),
         .reset(reset),
         .ReadReg1(rs),
-        .ReadReg2(rt),           // Use rt for second read register
-        .WriteReg(write_reg_mux),           // Use rd for write register
+        .ReadReg2(rt),         
+        .WriteReg(write_reg_mux),         
         .WriteData(alu_result),
         .RegWrite(reg_write),
         .ReadData1(read_data1),
         .ReadData2(read_data2),
-        .reg0_out(reg0_out),
-        .reg1_out(reg1_out),
-        .reg2_out(reg2_out),
-        .reg3_out(reg3_out)
+        .R0_out(R0_out),
+        .R1_out(R1_out),
+        .R2_out(R2_out),
+        .R3_out(R3_out)
     );
 	 
-	 ALU_Selector alu_mux (
-        .alu_src(alu_src),
+	 ALU_Select alu_mux (
+        .alu_select(alu_select),
         .read_data2(read_data2),
-        .imm_extended(imm_extended),
+        .immediate_ext(immediate_ext),
         .alu_input_b(alu_input_b)
     );
-		
-	ALU alu(
+    
+    ALU alu(
         .opcode(opcode),
         .A(read_data1),
         .B(alu_input_b),
         .Result(alu_result),
-        .Zero(zero_flag)
+        .Flag(zero_flag)
     );
+WriteReg_MUX wreg_mux(
+  .r_format(r_format),
+  .i_format(i_format),
+  .rd(rd),
+  .rs(rs),
+  .write_reg(write_reg_mux)
+ );
+    
 endmodule
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 
 `timescale 1ns / 1ps
-module ControlUnit(
+module Program_Counter(
+    input clk,
+    input reset,
+    input [5:0] jump_addr,    // Changed to 6-bit
+    input Jump,
+    input Branch,
+    input Flag,
+    output reg [3:0] PC
+);
+ always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            PC <= 4'b0;
+        end
+    else if (Jump) begin
+            PC <= jump_addr[3:0];  // Use only lowest 4 bits for 4-bit PC
+        end
+        else if (Branch && Flag) begin
+            PC <= jump_addr[3:0];  // Branch if Zero flag is set
+        end
+        else begin
+            PC <= PC + 1;  // Normal sequential execution
+        end
+    end
+endmodule
+
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+
+`timescale 1ns / 1ps
+module Instruction_memory(
+    input [3:0] Address,
+    output reg [7:0] Instruction
+);
+    reg [7:0] memory [0:15];  
+    integer i;
+    
+     initial begin
+        for (i = 0; i < 16; i = i + 1) begin
+            memory[i] = 8'b00_00_00_00;  
+        end
+        
+        memory[0] = 8'b01_00_1010;  // ADDIM R0, 10 
+        memory[1] = 8'b01_01_0000;  // ADDIM R1, 0
+        memory[2] = 8'b01_10_0000;  // ADDIM R1, 0
+		  memory[3] = 8'b10_0_1_0111;  // BEQ R1,R0,7 
+        memory[4] = 8'b00_01_10_10; //ADD R2, R2, R1 (R1+R2=R2)
+        memory[5] = 8'b01_01_0001; //ADDI R1 + 1 = R1
+        memory[6] = 8'b11_000011;    // JUMP to address 3
+        memory[7] = 8'b11_000111;  // JUMP to address 7
+        
+    end
+	 always @(Address) begin
+        Instruction = memory[Address];
+    end
+     
+endmodule
+
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+
+`timescale 1ns / 1ps
+module Decode(
+    input [7:0] Instruction,
+    output [1:0] opcode,
+    output [1:0] rs,
+    output [1:0] rt,
+    output [1:0] rd,
+    output [3:0] immediate,
+    output [5:0] jump_addr,
+    output j_format,
+    output i_format,
+    output r_format,
+    output b_format
+);
+  
+    // Extract 2-bit opcode (first 2 bits)
+     assign opcode = Instruction[7:6];
+    
+    assign rs = b_format ? {1'b0, Instruction[4]} : Instruction[5:4];
+    assign rt = b_format ? {1'b0, Instruction[5]} : Instruction[3:2];
+    assign rd = Instruction[1:0];
+	 
+	 // I-Format
+    assign immediate = Instruction[3:0];
+    
+    // J-Format
+    assign jump_addr = Instruction[5:0];
+    
+
+    assign r_format = (opcode == 2'b00);
+    assign i_format = (opcode == 2'b01);
+    assign b_format = (opcode == 2'b10);
+    assign j_format = (opcode == 2'b11);
+endmodule
+
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+
+`timescale 1ns / 1ps
+
+module Control_Unit(
     input [1:0] opcode,
-    input is_i_format,
-    input is_r_format,
-    input is_j_format,
-    input is_b_format,
+    input i_format,
+    input r_format,
+    input j_format,
+    input b_format,
     output reg RegWrite,
     output reg ALUSrc,
     output reg Jump,
-    output reg Branch,
-    output reg Halt
+    output reg Branch
 );
 	 
 	 always @(*) begin
-        // Default values
         RegWrite = 1'b0;
         ALUSrc = 1'b0;
         Jump = 1'b0;
         Branch = 1'b0;
-        Halt = 1'b0;
         
         case(opcode)
             2'b00: begin  // ADD (R-Format)
@@ -144,49 +240,46 @@ module ControlUnit(
 				end
             2'b10: begin  // BEQ (B-Format)
                 RegWrite = 1'b0;
-                ALUSrc = 1'b0;    // Compare registers
-                Branch = 1'b1;    // Enable branch
+                ALUSrc = 1'b0;   
+                Branch = 1'b1;    
             end
             2'b11: begin  // JUMP (J-Format)
                 RegWrite = 1'b0;
                 Jump = 1'b1;      // Enable jump
-            end
-            default: begin
-                Halt = 1'b1;
-            end
+            end     
         endcase
     end
 endmodule
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 
 `timescale 1ns / 1ps
-module RegisterFile(
-    input clk,
+module Reg_File(
+   input clk,
     input reset,
-    input [1:0] ReadReg1,    // rs register
-    input [1:0] ReadReg2,    // rt register 
-    input [1:0] WriteReg,    // rd register (destination)
+    input [1:0] ReadReg1,    // rs
+    input [1:0] ReadReg2,    // rt 
+    input [1:0] WriteReg,    // rd 
     input [7:0] WriteData,
-    input RegWrite,
+    input RegWrite, // 1 = write enable
     output [7:0] ReadData1,
     output [7:0] ReadData2,
-    output [7:0] reg0_out,
-    output [7:0] reg1_out,
-    output [7:0] reg2_out,
-    output [7:0] reg3_out
+    output [7:0] R0_out,
+    output [7:0] R1_out,
+    output [7:0] R2_out,
+    output [7:0] R3_out
 );
 	 
-	 reg [7:0] registers [0:3];
-	 assign reg0_out = registers[0];
-    assign reg1_out = registers[1];
-    assign reg2_out = registers[2];
-    assign reg3_out = registers[3];
-	 
-	 assign ReadData1 = registers[ReadReg1];  // rs value
-    assign ReadData2 = registers[ReadReg2];  // rt value
-	
-	always @(posedge clk or posedge reset) begin
+	   reg [7:0] registers [0:3];
+  assign R0_out = registers[0];
+    assign R1_out = registers[1];
+    assign R2_out = registers[2];
+    assign R3_out = registers[3];
+  
+  assign ReadData1 = registers[ReadReg1];  // rs
+    assign ReadData2 = registers[ReadReg2];  // rt 
+ 
+ always @(posedge clk or posedge reset) begin
         if (reset) begin
      
             registers[0] <= 8'b0;
@@ -196,14 +289,26 @@ module RegisterFile(
         end
 		  
 		  
-		  else if (RegWrite) begin
-            // Only write if RegWrite is enabled
+		   else if (RegWrite) begin
             registers[WriteReg] <= WriteData;
         end
     end
-endmodule	
+endmodule
+	
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+`timescale 1ns / 1ps
+
+module ALU_Select(
+    input wire alu_select,
+    input wire [7:0] read_data2,
+    input wire [7:0] immediate_ext,
+    output wire [7:0] alu_input_b
+);
+    assign alu_input_b = alu_select ? immediate_ext : read_data2;
+endmodule
+
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 
 `timescale 1ns / 1ps
 module ALU(
@@ -211,156 +316,43 @@ module ALU(
     input [7:0] A,
     input [7:0] B,
     output reg [7:0] Result,
-    output reg Zero
+    output reg Flag
 );
 always @(*) begin
         case(opcode)
-            2'b00: begin // ADD - Add registers
+            2'b00: begin // ADD 
                 Result = A + B;
-                //Zero = (Result == 8'b0) ? 1'b1 : 1'b0;
             end
-            2'b01: begin // ADDIM - Add immediate
+            2'b01: begin // ADDIM 
                 Result = A + B;
-                //Zero = (Result == 8'b0) ? 1'b1 : 1'b0;
             end
-				2'b10: begin // BEQ - Branch if equal
+				2'b10: begin // BEQ
                 Result = (A == B) ? 8'b1 : 8'b0;
-                Zero = (A == B) ? 1'b1 : 1'b0;
+                Flag = (A == B) ? 1'b1 : 1'b0;
             end
-            2'b11: begin // JUMP - Jump
+				 2'b11: begin // JUMP
                 Result = A;
-                //Zero = 1'b0;
             end
             default: begin
                 Result = 8'b0;
-                Zero = 1'b1;
+                Flag = 1'b1;
             end
-				endcase
+    endcase
     end
 endmodule
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 
 `timescale 1ns / 1ps
-module Decode(
-    input [7:0] Instruction,
-    output [1:0] opcode,
-    output [1:0] rs,
-    output [1:0] rt,
-    output [1:0] rd,
-    output [3:0] imm,
-    output [5:0] jump_addr,
-    output is_j_format,
-    output is_i_format,
-    output is_r_format,
-    output is_b_format
+
+module WriteReg_MUX(
+    input r_format,
+    input i_format,
+    input [1:0] rd,
+    input [1:0] rs,
+    output [1:0] write_reg
 );
-  
-    // Extract 2-bit opcode (first 2 bits)
-    assign opcode = Instruction[7:6];
-    
-    // For R-Format: opcode (2 bits) + rs (2 bits) + rt (2 bits) + rd (2 bits)
-      assign rs = is_b_format ? {1'b0, Instruction[4]} : Instruction[5:4];
-    assign rt = is_b_format ? {1'b0, Instruction[5]} : Instruction[3:2];
-    assign rd = Instruction[1:0];
-	 
-	 // For I-Format: opcode (2 bits) + rs (2 bits) + immediate (4 bits)
-   assign imm = Instruction[3:0];
-    
-    // สำหรับ J-Format
-    assign jump_addr = Instruction[5:0];
-    
-    // สำหรับ B-Format ที่ต้องการให้ rt, rs เป็น 1 bit
-    // B-Format: opcode(2) | rt(1) | rs(1) | addr(4)
-	 
-	 // Determine instruction format
-assign is_r_format = (opcode == 2'b00);
-    assign is_i_format = (opcode == 2'b01);
-    assign is_b_format = (opcode == 2'b10);
-    assign is_j_format = (opcode == 2'b11);
+ assign write_reg = r_format ? rd :    // R-format: write rd
+                       i_format ? rs :     // I-format: write rs
+                       2'b00;              // (J/B-format): not write
 endmodule
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-`timescale 1ns / 1ps
-module ProgramCounter(
-    input clk,
-    input reset,
-    input [5:0] jump_addr,    // Changed to 6-bit
-    input Jump,
-    input Branch,
-    input Zero,
-    input Halt,
-    output reg [3:0] PC
-);
- always @(posedge clk or posedge reset) begin
-        if (reset) begin
-            PC <= 4'b0;
-        end
-        else if (Halt) begin
-            PC <= PC;  // Maintain PC on HALT
-        end
-		  else if (Jump) begin
-            PC <= jump_addr[3:0];  // Use only lowest 4 bits for 4-bit PC
-        end
-        else if (Branch && Zero) begin
-            PC <= jump_addr[3:0];  // Branch if Zero flag is set
-        end
-        else begin
-            PC <= PC + 1;  // Normal sequential execution
-        end
-		  end
-endmodule
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-`timescale 1ns / 1ps
-
-module tb_cpu;
-
-	// Inputs
-	reg clk;
-	reg reset;
-
-	// Outputs
-	wire [3:0] pc_out;
-	wire [7:0] instruction_out;
-	wire [7:0] alu_result_out;
-	wire [7:0] reg0_out;
-	wire [7:0] reg1_out;
-	wire [7:0] reg2_out;
-	wire [7:0] reg3_out;
-
-	// Instantiate the Unit Under Test (UUT)
-	CPU uut (
-		.clk(clk), 
-		.reset(reset), 
-		.pc_out(pc_out), 
-		.instruction_out(instruction_out), 
-		.alu_result_out(alu_result_out), 
-		.reg0_out(reg0_out), 
-		.reg1_out(reg1_out), 
-		.reg2_out(reg2_out), 
-		.reg3_out(reg3_out)
-	);
-	always #5 clk = ~clk;
-	initial begin
-		// Initialize Inputs
-		clk = 0;
-		reset = 1; #20
-		reset = 0;
-		$monitor("Time = %t   | PC = %d | Instr = %b | ALU = %d   | R0 = %d   | R1 = %d   | R2 = %d   | R3 = %d", 
-			$time, pc_out, instruction_out, alu_result_out, reg0_out, reg1_out, reg2_out, reg3_out);
-		// Wait 100 ns for global reset to finish
-		#500;
-        
-		// Add stimulus here
-
-	end
-      
-endmodule
-
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
