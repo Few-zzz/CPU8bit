@@ -1,0 +1,56 @@
+`timescale 1ns / 1ps
+
+
+module tb_CPU;
+
+ // Inputs
+ reg clk;
+ reg reset;
+
+ // Outputs
+ wire [3:0] pc_out;
+ wire [7:0] instruction_out;
+ wire [7:0] alu_result_out;
+ wire [7:0] R0_out;
+ wire [7:0] R1_out;
+ wire [7:0] R2_out;
+ wire [7:0] R3_out;
+  // Instantiate the Unit Under Test (UUT)
+ CPU uut (
+  .clk(clk), 
+  .reset(reset), 
+  .pc_out(pc_out), 
+  .instruction_out(instruction_out), 
+  .alu_result_out(alu_result_out), 
+  .R0_out(R0_out), 
+  .R1_out(R1_out), 
+  .R2_out(R2_out), 
+  .R3_out(R3_out)
+ );
+ 
+  always #5 clk = ~clk;
+    
+    // Display task to make output more readable
+    task display_state;
+        begin
+            $display("------------------------------------------------------");
+            $display("PC = %d | Instruction = %b", pc_out, instruction_out);
+				$display("ALU Result = %d (%b)", alu_result_out, alu_result_out);
+            $display("Register Values: R0 = %d (%b) | R1 = %d (%b) | R2 = %d (%b) | R3 = %d (%b) ",R0_out, R0_out, R1_out, R1_out, R2_out, R2_out, R3_out, R3_out);
+        end
+    endtask
+	 initial begin
+        // Initialize Inputs
+        clk = 0;
+        reset = 1; 
+        #20 reset = 0;
+        
+        display_state;
+        
+        repeat(44) begin
+            #10 display_state;
+        end
+        
+        $finish;
+    end
+endmodule
